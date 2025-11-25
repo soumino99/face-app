@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>顔タイプ診断アプリ</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}" />
+    <link href="https://fonts.googleapis.com/earlyaccess/nicomoji.css" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div class="app-frame">
+      <section class="screen active" id="screen-home">
+        <div class="title-wrap">
+          <div class="title-easy wf-nicomoji">かんたん</div>
+          <h1 class="title-main">顔診断アプリ</h1>
+        </div>
+
+        <p>あなたの顔タイプを診断します！</p>
+        <p>下のボタンを押して早速スタート♪</p>
+
+        <div class="nav-buttons single">
+          <button class="button next-button" data-target="screen-camera">
+            診断スタート ⇀
+          </button>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-camera">
+        <h2 class="heading" data-number="01">顔画像の撮影</h2>
+
+        <div class="camera-area">
+          <div class="camera-preview">
+            <video id="camera" autoplay muted playsinline></video>
+            <button class="button shoot-button" data-target="screen-confirm">
+              <img src="{{ url_for('static', path='img/camera-icon.png') }}" width="40" alt="撮影" />
+            </button>
+          </div>
+
+          <p>目と鼻のラインを合わせて撮影してね♪</p>
+
+          <div class="nav-buttons single">
+            <button class="button prev-button" data-target="screen-home">
+              ↼ 戻る
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-confirm">
+        <h2 class="heading" data-number="02">画像の確認</h2>
+
+        <p>この画像で問題ないかな？☺</p>
+        <div class="image-preview">撮影した画像</div>
+
+        <div class="nav-buttons">
+          <button class="button prev-button" data-target="screen-camera">
+            ↼ 撮り直す
+          </button>
+          <button class="button next-button" data-target="screen-feature" id="go-feature">
+            次へ ⇀
+          </button>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-feature">
+        <h2 class="heading" data-number="03">特徴点の確認</h2>
+
+        <p>特徴点の位置を確認してね！</p>
+        <div class="feature-container">
+          <canvas id="feature-canvas" style="width: 100%; border-radius: 16px; background: #eee;"></canvas>
+        </div>
+
+        <div class="nav-buttons">
+          <button class="button prev-button" data-loading-target="screen-feature">
+            再認識
+          </button>
+          <button class="button next-button" data-loading-target="screen-result" id="start-diagnosis">
+            診断開始 ⇀
+          </button>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-loading">
+        <div class="loading-container">
+          <div class="loading-spinner"></div>
+          <p class="loading-text">Loading…</p>
+        </div>
+      </section>
+
+      <section class="screen" id="screen-result">
+        <h2 class="heading">診断結果</h2>
+
+        <div class="result-layout">
+          <div class="result-image-wrapper">
+            <canvas id="result-canvas"></canvas>
+          </div>
+          <div class="result-info">
+            <p id="result-text"></p>
+            <p class="result-type">
+              ソフトで親しみやすい「フェミニン」タイプ☺
+            </p>
+
+            <h3 class="result-feature">あなたの顔の特徴</h3>
+            <p>
+              丸顔でたれ目の優しい雰囲気があります。<br />
+              全体的に親しみやすい・かわいらしい・やわらかい印象です♪
+            </p>
+
+            <h3>髪色・有名人類似度など</h3>
+            <p>ピンク系が似合いそう♪ / 〇〇さんに似ています など</p>
+          </div>
+        </div>
+
+        <div class="nav-buttons">
+          <button class="button next-button" data-target="screen-camera">
+            もう一度診断
+          </button>
+          <button class="button next-button" data-target="screen-home">
+            アプリ終了
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <script src="{{ url_for('static', path='script.js') }}" defer></script>
+  </body>
+</html>
