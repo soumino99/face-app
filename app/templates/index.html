@@ -61,7 +61,7 @@
           <button class="button prev-button" data-target="screen-camera">
             ↼ 撮り直す
           </button>
-          <button class="button next-button" data-target="screen-feature" id="go-feature">
+          <button class="button next-button" id="go-feature">
             次へ ⇀
           </button>
         </div>
@@ -76,10 +76,10 @@
         </div>
 
         <div class="nav-buttons">
-          <button class="button prev-button" data-loading-target="screen-feature">
+          <button class="button prev-button" id="retry-analysis">
             再認識
           </button>
-          <button class="button next-button" data-loading-target="screen-result" id="start-diagnosis">
+          <button class="button next-button" id="start-diagnosis">
             診断開始 ⇀
           </button>
         </div>
@@ -100,19 +100,18 @@
             <canvas id="result-canvas"></canvas>
           </div>
           <div class="result-info">
-            <p id="result-text"></p>
-            <p class="result-type">
-              ソフトで親しみやすい「フェミニン」タイプ☺
-            </p>
+            <p id="result-type" class="result-type">--</p>
+            <p id="result-description"></p>
+            <p id="result-celebrity" class="result-celebrity"></p>
 
-            <h3 class="result-feature">あなたの顔の特徴</h3>
-            <p>
-              丸顔でたれ目の優しい雰囲気があります。<br />
-              全体的に親しみやすい・かわいらしい・やわらかい印象です♪
-            </p>
+            <h3 class="result-feature">おすすめカラーパレット</h3>
+            <div id="result-palette" class="chip-list"></div>
 
-            <h3>髪色・有名人類似度など</h3>
-            <p>ピンク系が似合いそう♪ / 〇〇さんに似ています など</p>
+            <h3>ケア / スタイリングのヒント</h3>
+            <ul id="result-care" class="result-list"></ul>
+
+            <h3>次のアクション</h3>
+            <ul id="result-next" class="result-list"></ul>
           </div>
         </div>
 

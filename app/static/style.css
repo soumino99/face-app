@@ -263,6 +263,37 @@ h3 {
   margin-top: 12px;
 }
 
+.result-celebrity {
+  font-size: 1.1rem;
+  color: var(--color-text-muted);
+  margin-bottom: 16px;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
+.chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: #f5f5f5;
+  font-size: 0.9rem;
+}
+
+.result-list {
+  padding-left: 20px;
+  margin: 8px 0 16px;
+}
+
+.result-list li {
+  margin-bottom: 6px;
+}
+
+
 .result-main {
   font-weight: bold;
 }
