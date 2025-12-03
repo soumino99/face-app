@@ -1,6 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
   const screens = document.querySelectorAll(".screen");
   const cameraVideo = document.getElementById("camera");
+  const uploadButton = document.getElementById("upload-button");
+  const uploadInput = document.getElementById("upload-input");
   const featureCanvas = document.getElementById("feature-canvas");
   const resultCanvas = document.getElementById("result-canvas");
   const shootButton = document.querySelector(".shoot-button");
@@ -8,11 +10,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const diagnoseButton = document.getElementById("start-diagnosis");
   const retryAnalysisButton = document.getElementById("retry-analysis");
   const resultTypeEl = document.getElementById("result-type");
-  const resultDescriptionEl = document.getElementById("result-description");
-  const resultCelebrityEl = document.getElementById("result-celebrity");
-  const resultPaletteEl = document.getElementById("result-palette");
-  const resultCareEl = document.getElementById("result-care");
-  const resultNextEl = document.getElementById("result-next");
   const API_BASE_URL = "/api"; // same origin served by FastAPI
 
   let cameraStream = null;
@@ -71,13 +68,19 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
     capturedImageData = canvas.toDataURL("image/jpeg");
 
-    const preview = document.querySelector("#screen-confirm .image-preview");
-    if (preview) {
-      preview.innerHTML = `<img src="${capturedImageData}" style="width:100%; border-radius: 16px;" alt="captured" />`;
-    }
+    updateConfirmPreview(capturedImageData);
 
     analysisId = null;
     currentLandmarks = [];
+  }
+
+  function updateConfirmPreview(imageData) {
+    const preview = document.querySelector("#screen-confirm .image-preview");
+    if (preview) {
+      preview.innerHTML = imageData
+        ? `<img src="${imageData}" style="width:100%; border-radius: 16px;" alt="captured" />`
+        : "撮影した画像";
+    }
   }
 
   function base64ToBlob(dataUrl) {
@@ -193,50 +196,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderDiagnosisResult(result) {
-    if (!result) {
+    if (!resultTypeEl) {
       return;
     }
-    if (resultTypeEl) {
-      resultTypeEl.textContent = result.type ?? "結果を取得できませんでした";
-    }
-    if (resultDescriptionEl) {
-      resultDescriptionEl.textContent = result.description ?? "";
-    }
-    if (resultCelebrityEl) {
-      resultCelebrityEl.textContent = result.celebrity
-        ? `似ている有名人: ${result.celebrity}`
-        : "";
-    }
-    renderChipList(resultPaletteEl, result.palette);
-    renderList(resultCareEl, result.careTips);
-    renderList(resultNextEl, result.nextSteps);
-  }
-
-  function renderChipList(container, items) {
-    if (!container) return;
-    container.innerHTML = "";
-    if (!Array.isArray(items) || !items.length) {
-      return;
-    }
-    items.forEach((text) => {
-      const chip = document.createElement("span");
-      chip.className = "chip";
-      chip.textContent = text;
-      container.appendChild(chip);
-    });
-  }
-
-  function renderList(container, items) {
-    if (!container) return;
-    container.innerHTML = "";
-    if (!Array.isArray(items) || !items.length) {
-      return;
-    }
-    items.forEach((text) => {
-      const li = document.createElement("li");
-      li.textContent = text;
-      container.appendChild(li);
-    });
+    resultTypeEl.textContent = result?.shape ?? "結果を取得できませんでした";
   }
 
   function displayResultImage() {
@@ -269,6 +232,8 @@ document.addEventListener("DOMContentLoaded", () => {
   featureCanvas?.addEventListener("dblclick", handleCanvasDoubleClick);
 
   shootButton?.addEventListener("click", capturePhoto);
+  uploadButton?.addEventListener("click", () => uploadInput?.click());
+  uploadInput?.addEventListener("change", handleFileUpload);
   goFeatureButton?.addEventListener("click", () => sendImageToServerForFaceDetect());
   diagnoseButton?.addEventListener("click", () => sendLandmarksForDiagnosis());
   retryAnalysisButton?.addEventListener("click", () => sendImageToServerForFaceDetect());
@@ -318,6 +283,38 @@ document.addEventListener("DOMContentLoaded", () => {
     const { x, y } = getCanvasCoordinates(event);
     currentLandmarks.push({ x, y });
     renderFeatureCanvas(currentLandmarks.length - 1);
+  }
+
+  function handleFileUpload(event) {
+    const [file] = event.target.files || [];
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      alert("画像ファイルを選択してください");
+      uploadInput.value = "";
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert("5MB以下の画像を選択してください");
+      uploadInput.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      capturedImageData = reader.result;
+      analysisId = null;
+      currentLandmarks = [];
+      updateConfirmPreview(capturedImageData);
+      showScreen("screen-confirm");
+      uploadInput.value = "";
+    };
+    reader.onerror = () => {
+      alert("画像の読み込みに失敗しました");
+      uploadInput.value = "";
+    };
+    reader.readAsDataURL(file);
   }
 
   function getCanvasCoordinates(event) {

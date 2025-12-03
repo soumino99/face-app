@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 from datetime import datetime, timedelta
 from hashlib import sha256
@@ -44,6 +45,15 @@ TARGET_LANDMARKS = [
     291,
 ]
 
+FACE_SHAPE_LABELS = {
+    "round": "丸顔",
+    "oval": "卵型",
+    "long": "面長",
+    "heart": "逆三角形",
+    "square": "ベース型",
+    "diamond": "ひし形",
+}
+
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -71,18 +81,11 @@ class FaceAnalyzeResponse(BaseModel):
 
 class DiagnoseInput(BaseModel):
     analysisId: str = Field(..., min_length=10)
-    stylePreference: Optional[str] = Field(default=None)
-    focus: Optional[str] = Field(default=None)
     landmarks: Optional[List[Landmark]] = Field(default=None)
 
 
 class DiagnoseResult(BaseModel):
-    type: str
-    description: str
-    palette: List[str]
-    celebrity: str
-    careTips: List[str]
-    nextSteps: List[str]
+    shape: str
 
 
 class DiagnoseResponse(BaseModel):
@@ -158,7 +161,7 @@ async def face_analyze(file: UploadFile = File(...)) -> FaceAnalyzeResponse:
         analysisId=analysis_id,
         landmarks=landmarks,
         quality={"score": quality_score, "message": f"撮影状態: {quality_label}"},
-        faceShape=face_shape,
+        faceShape=_shape_label(face_shape),
         symmetry={"score": symmetry_score, "label": _symmetry_label(symmetry_score)},
         recommendationPreview=_face_shape_tip(face_shape),
     )
@@ -174,10 +177,8 @@ async def diagnose(payload: DiagnoseInput) -> DiagnoseResponse:
         analysis["landmarks"] = [lm.model_dump() for lm in payload.landmarks]
 
     face_shape = analysis["face_shape"]
-    style_pref = (payload.stylePreference or "natural").lower()
-    focus = (payload.focus or "balance").lower()
 
-    descriptor = _build_descriptor(face_shape, style_pref, focus)
+    descriptor = _build_descriptor(face_shape)
     return DiagnoseResponse(result=descriptor)
 
 
@@ -215,21 +216,51 @@ def _normalize_mediapipe_landmarks(
 
 
 def _analyze_face_shape_mediapipe(landmarks: List[Landmark]) -> str:
-    if len(landmarks) < 3:
+    """Roughly classify into six face shapes using landmark ratios."""
+
+    if len(landmarks) < len(TARGET_LANDMARKS):
         return "oval"
-    left = landmarks[1]
-    right = landmarks[2]
+
     chin = landmarks[0]
-    width = abs(right.x - left.x)
-    height = abs(chin.y - (left.y + right.y) / 2)
-    if width <= 0 or height <= 0:
+    left_cheek = landmarks[1]
+    right_cheek = landmarks[2]
+    left_forehead = landmarks[3]
+    right_forehead = landmarks[4]
+    forehead_center = landmarks[5]
+    left_jaw = landmarks[6]
+    right_jaw = landmarks[7]
+
+    def _distance(p1: Landmark, p2: Landmark) -> float:
+        return math.hypot(p1.x - p2.x, p1.y - p2.y)
+
+    face_height = _distance(chin, forehead_center)
+    cheek_width = _distance(left_cheek, right_cheek)
+    forehead_width = _distance(left_forehead, right_forehead)
+    jaw_width = _distance(left_jaw, right_jaw)
+
+    if face_height == 0 or cheek_width == 0:
         return "oval"
-    aspect_ratio = width / height
-    if aspect_ratio > 1.5:
-        return "round"
-    if aspect_ratio < 1.1:
+
+    width_height_ratio = cheek_width / face_height
+    forehead_ratio = forehead_width / cheek_width if cheek_width else 1.0
+    jaw_ratio = jaw_width / cheek_width if cheek_width else 1.0
+    forehead_vs_jaw = forehead_width / jaw_width if jaw_width else forehead_ratio
+
+    if width_height_ratio <= 0.72:
+        return "long"
+    if forehead_vs_jaw >= 1.1 and jaw_ratio <= 0.85:
         return "heart"
+    if forehead_ratio <= 0.9 and jaw_ratio <= 0.9:
+        return "diamond"
+    if jaw_ratio >= 1.05 and width_height_ratio >= 0.78:
+        return "square"
+    if width_height_ratio >= 0.9 and 0.9 <= forehead_ratio <= 1.1:
+        return "round"
     return "oval"
+
+
+def _shape_label(shape: str) -> str:
+    return FACE_SHAPE_LABELS.get(shape, "バランスタイプ")
 
 
 def _calculate_quality(image: np.ndarray) -> float:
@@ -258,69 +289,14 @@ def _face_shape_tip(shape: str) -> str:
         "round": "丸顔さんは縦ラインを意識するとシャープに見えます。",
         "heart": "逆三角形はトップにボリュームを出すと華やかさアップ。",
         "square": "ベース型は柔らかいカールでフェイスラインをカバー。",
+        "long": "面長さんは横ラインや前髪でバランスを取ると◎。",
+        "diamond": "ひし形タイプは頬骨を意識したハイライトで立体感を演出。",
     }
     return tips.get(shape, "バランスの良いフェイスラインです。")
 
 
-def _build_descriptor(face_shape: str, style_pref: str, focus: str) -> DiagnoseResult:
-    palette_options = {
-        "natural": ["コーラルピンク", "ミルクティーベージュ", "ローズブラウン"],
-        "cool": ["ライラック", "アッシュグレー", "ネイビーブラック"],
-        "cute": ["ピーチピンク", "アプリコット", "ハニーオレンジ"],
-    }
-    celebrity_map = {
-        "oval": "〇〇 さん風の上品さ",
-        "round": "△△ さんのような柔らかさ",
-        "heart": "◇◇ さんの華やかライン",
-        "square": "□□ さんの知的ムード",
-    }
-    care_tips = {
-        "eyes": ["アイラインは目尻をやや長めに", "下まつげは軽めに"],
-        "line": ["チークは耳下から斜めに", "シェーディングでフェイスラインを整える"],
-        "balance": [
-            "眉とリップの色味を合わせる",
-            "トップスは曲線的なネックラインがおすすめ",
-        ],
-    }
-    shape_titles = {
-        "oval": "ノーブルバランス",
-        "round": "ソフトキュート",
-        "heart": "フェミニンブリリアント",
-        "square": "モードエレガンス",
-    }
-
-    palette = palette_options.get(style_pref, palette_options["natural"])
-    focus_key = focus if focus in care_tips else "balance"
-    title = f"{shape_titles.get(face_shape, 'スタンダード')} × {style_pref.title()}"
-    description = _build_description(face_shape, style_pref)
-
-    return DiagnoseResult(
-        type=title,
-        description=description,
-        palette=palette,
-        celebrity=celebrity_map.get(face_shape, "親しみやすい印象"),
-        careTips=care_tips[focus_key],
-        nextSteps=[
-            "照明の良い場所で再撮影するとスコアが安定します",
-            "おすすめカラーでメイクや服を試してみてください",
-            "気に入った結果はスクリーンショットで保存しましょう",
-        ],
-    )
-
-
-def _build_description(face_shape: str, style_pref: str) -> str:
-    shape_desc = {
-        "oval": "バランスの取れた輪郭で、どの角度から見ても整った印象です。",
-        "round": "柔らかく親しみやすい雰囲気が強く、笑顔が映えるタイプです。",
-        "heart": "キリッとした目元とシャープな顎先が特徴で、華やかさが際立ちます。",
-        "square": "直線的な骨格がクールで知的な印象を与えます。",
-    }
-    style_desc = {
-        "natural": "ナチュラルカラーで透明感を引き出すと◎",
-        "cool": "寒色系で洗練されたムードを演出できます。",
-        "cute": "温かみのある色味でフェミニンに仕上がります。",
-    }
-    return f"{shape_desc.get(face_shape, '整ったバランスタイプです。')}{style_desc.get(style_pref, '')}"
+def _build_descriptor(face_shape: str) -> DiagnoseResult:
+    return DiagnoseResult(shape=_shape_label(face_shape))
 
 
 def _purge_expired() -> None:

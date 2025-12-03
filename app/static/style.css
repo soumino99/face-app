@@ -175,6 +175,30 @@ h3 {
   margin-top: 3px;
 }
 
+#upload-button {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+#upload-button svg {
+  width: 72px;
+  height: 72px;
+  transition: transform 0.2s ease;
+  display: block;
+}
+
+#upload-button:hover svg,
+#upload-button:focus-visible svg {
+  transform: translateY(-2px) scale(1.02);
+}
+
 .camera-area {
   display: flex;
   flex-direction: column;
