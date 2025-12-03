@@ -35,14 +35,20 @@ face_mesh = mp_face_mesh.FaceMesh(
 )
 
 TARGET_LANDMARKS = [
-    152,  # chin tip
-    127,
-    356,
-    226,
-    446,
-    1,
-    61,
-    291,
+    ("chin_tip", 152),
+    ("jaw_left", 172),
+    ("jaw_right", 397),
+    ("jaw_corner_left", 234),
+    ("jaw_corner_right", 454),
+    ("cheek_left", 93),
+    ("cheek_right", 323),
+    ("temple_left", 67),
+    ("temple_right", 297),
+    ("forehead_left", 109),
+    ("forehead_right", 338),
+    ("forehead_center", 10),
+    ("upper_cheek_left", 50),
+    ("upper_cheek_right", 280),
 ]
 
 FACE_SHAPE_LABELS = {
@@ -202,7 +208,7 @@ def _normalize_mediapipe_landmarks(
     face_landmarks, width: int, height: int
 ) -> List[Landmark]:
     normalized: List[Landmark] = []
-    for idx in TARGET_LANDMARKS:
+    for _, idx in TARGET_LANDMARKS:
         if idx >= len(face_landmarks.landmark):
             continue
         lm = face_landmarks.landmark[idx]
@@ -215,46 +221,86 @@ def _normalize_mediapipe_landmarks(
     return normalized
 
 
-def _analyze_face_shape_mediapipe(landmarks: List[Landmark]) -> str:
-    """Roughly classify into six face shapes using landmark ratios."""
-
+def _landmark_map(landmarks: List[Landmark]) -> Dict[str, Landmark]:
     if len(landmarks) < len(TARGET_LANDMARKS):
+        return {}
+    return {name: landmarks[idx] for idx, (name, _) in enumerate(TARGET_LANDMARKS)}
+
+
+def _distance(p1: Landmark, p2: Landmark) -> float:
+    return math.hypot(p1.x - p2.x, p1.y - p2.y)
+
+
+def _angle(a: Landmark, b: Landmark, c: Landmark) -> float:
+    """Return the ABC angle in degrees (with B as vertex)."""
+
+    ab = (a.x - b.x, a.y - b.y)
+    cb = (c.x - b.x, c.y - b.y)
+    ab_len = math.hypot(*ab)
+    cb_len = math.hypot(*cb)
+    if ab_len == 0 or cb_len == 0:
+        return 0.0
+    cos_angle = max(-1.0, min(1.0, (ab[0] * cb[0] + ab[1] * cb[1]) / (ab_len * cb_len)))
+    return math.degrees(math.acos(cos_angle))
+
+
+def _analyze_face_shape_mediapipe(landmarks: List[Landmark]) -> str:
+    """Classify into six face shapes using expanded landmarks/ratios."""
+
+    lm = _landmark_map(landmarks)
+    required = {
+        "chin_tip",
+        "cheek_left",
+        "cheek_right",
+        "forehead_center",
+        "forehead_left",
+        "forehead_right",
+        "temple_left",
+        "temple_right",
+        "jaw_left",
+        "jaw_right",
+        "jaw_corner_left",
+        "jaw_corner_right",
+        "upper_cheek_left",
+        "upper_cheek_right",
+    }
+    if not required.issubset(lm.keys()):
         return "oval"
 
-    chin = landmarks[0]
-    left_cheek = landmarks[1]
-    right_cheek = landmarks[2]
-    left_forehead = landmarks[3]
-    right_forehead = landmarks[4]
-    forehead_center = landmarks[5]
-    left_jaw = landmarks[6]
-    right_jaw = landmarks[7]
-
-    def _distance(p1: Landmark, p2: Landmark) -> float:
-        return math.hypot(p1.x - p2.x, p1.y - p2.y)
-
+    chin = lm["chin_tip"]
+    forehead_center = lm["forehead_center"]
+    cheek_width = _distance(lm["cheek_left"], lm["cheek_right"])
+    temple_width = _distance(lm["temple_left"], lm["temple_right"])
+    forehead_width = _distance(lm["forehead_left"], lm["forehead_right"])
+    jaw_width = _distance(lm["jaw_left"], lm["jaw_right"])
+    jawline_width = _distance(lm["jaw_corner_left"], lm["jaw_corner_right"])
+    upper_cheek_width = _distance(lm["upper_cheek_left"], lm["upper_cheek_right"])
     face_height = _distance(chin, forehead_center)
-    cheek_width = _distance(left_cheek, right_cheek)
-    forehead_width = _distance(left_forehead, right_forehead)
-    jaw_width = _distance(left_jaw, right_jaw)
 
-    if face_height == 0 or cheek_width == 0:
+    if face_height <= 0 or cheek_width <= 0:
         return "oval"
 
-    width_height_ratio = cheek_width / face_height
-    forehead_ratio = forehead_width / cheek_width if cheek_width else 1.0
-    jaw_ratio = jaw_width / cheek_width if cheek_width else 1.0
-    forehead_vs_jaw = forehead_width / jaw_width if jaw_width else forehead_ratio
+    cheek_vs_height = cheek_width / face_height
+    forehead_vs_cheek = forehead_width / cheek_width
+    temple_vs_cheek = temple_width / cheek_width
+    jaw_vs_cheek = jaw_width / cheek_width
+    jawline_vs_cheek = jawline_width / cheek_width
+    cheek_prominence = upper_cheek_width / jawline_width if jawline_width else 1.0
+    jaw_angle = _angle(lm["jaw_corner_left"], chin, lm["jaw_corner_right"])
 
-    if width_height_ratio <= 0.72:
+    if cheek_vs_height <= 0.68:
         return "long"
-    if forehead_vs_jaw >= 1.1 and jaw_ratio <= 0.85:
+    if forehead_vs_cheek >= 1.08 and jaw_vs_cheek <= 0.82 and temple_vs_cheek >= 1.05:
         return "heart"
-    if forehead_ratio <= 0.9 and jaw_ratio <= 0.9:
+    if temple_vs_cheek <= 0.92 and cheek_prominence >= 1.08 and jaw_vs_cheek <= 0.9:
         return "diamond"
-    if jaw_ratio >= 1.05 and width_height_ratio >= 0.78:
+    if jaw_vs_cheek >= 1.02 and jaw_angle >= 150 and jawline_vs_cheek >= 0.95:
         return "square"
-    if width_height_ratio >= 0.9 and 0.9 <= forehead_ratio <= 1.1:
+    if (
+        cheek_vs_height >= 0.9
+        and abs(forehead_vs_cheek - 1.0) <= 0.1
+        and jaw_vs_cheek >= 0.95
+    ):
         return "round"
     return "oval"
 
