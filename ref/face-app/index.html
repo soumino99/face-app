@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <title>顔タイプ診断アプリ</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}" />
+    <link rel="stylesheet" href="style.css" />
     <link href="https://fonts.googleapis.com/earlyaccess/nicomoji.css" rel="stylesheet" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -14,6 +14,7 @@
   </head>
   <body>
     <div class="app-frame">
+      <!-- G-1 ホーム画面 -->
       <section class="screen active" id="screen-home">
         <div class="title-wrap">
           <div class="title-easy wf-nicomoji">かんたん</div>
@@ -30,6 +31,7 @@
         </div>
       </section>
 
+      <!-- G-2 カメラ撮影画面 -->
       <section class="screen" id="screen-camera">
         <h2 class="heading" data-number="01">顔画像の撮影</h2>
 
@@ -37,23 +39,11 @@
           <div class="camera-preview">
             <video id="camera" autoplay muted playsinline></video>
             <button class="button shoot-button" data-target="screen-confirm">
-              <img src="{{ url_for('static', path='img/camera-icon.png') }}" width="40" alt="撮影" />
+              <img src="img/camera-icon.png" width="40" alt="撮影" />
             </button>
           </div>
 
           <p>目と鼻のラインを合わせて撮影してね♪</p>
-
-          <div class="nav-buttons single">
-            <button class="button upload-button" type="button" id="upload-button">
-              <img
-                src="{{ url_for('static', path='img/library-icon.png') }}"
-                width="72"
-                height="72"
-                alt="ライブラリアイコン"
-              />
-              <span>ライブラリから選ぶ</span>
-            </button>
-          </div>
 
           <div class="nav-buttons single">
             <button class="button prev-button" data-target="screen-home">
@@ -63,8 +53,7 @@
         </div>
       </section>
 
-      <input type="file" id="upload-input" accept="image/*" style="display:none" />
-
+      <!-- G-2-1 撮影画像確認画面 -->
       <section class="screen" id="screen-confirm">
         <h2 class="heading" data-number="02">画像の確認</h2>
 
@@ -75,30 +64,30 @@
           <button class="button prev-button" data-target="screen-camera">
             ↼ 撮り直す
           </button>
-          <button class="button next-button" id="go-feature">
+          <button class="button next-button" data-target="screen-feature">
             次へ ⇀
           </button>
         </div>
       </section>
 
+      <!-- G-3 特徴点確認 -->
       <section class="screen" id="screen-feature">
         <h2 class="heading" data-number="03">特徴点の確認</h2>
 
         <p>特徴点の位置を確認してね！</p>
-        <div class="feature-container">
-          <canvas id="feature-canvas" style="width: 100%; border-radius: 16px; background: #eee;"></canvas>
-        </div>
+        <div class="image-preview">画像</div>
 
         <div class="nav-buttons">
-          <button class="button prev-button" id="retry-analysis">
+          <button class="button prev-button" data-loading-target="screen-feature">
             再認識
           </button>
-          <button class="button next-button" id="start-diagnosis">
+          <button class="button next-button" data-loading-target="screen-result">
             診断開始 ⇀
           </button>
         </div>
       </section>
 
+      <!-- Loading 診断中画面 -->
       <section class="screen" id="screen-loading">
         <div class="loading-container">
           <div class="loading-spinner"></div>
@@ -106,15 +95,28 @@
         </div>
       </section>
 
+      <!-- G-4 診断結果画面 -->
       <section class="screen" id="screen-result">
         <h2 class="heading">診断結果</h2>
 
         <div class="result-layout">
-          <div class="result-image-wrapper">
-            <canvas id="result-canvas"></canvas>
-          </div>
+          <!-- 左：結果画像 -->
+          <div class="image-preview">画像</div>
+
+          <!-- 右：テキスト情報 -->
           <div class="result-info">
-            <p id="result-type" class="result-type">--</p>
+            <p class="result-type">
+              ソフトで親しみやすい「フェミニン」タイプ☺
+            </p>
+
+            <h3 class="result-feature">あなたの顔の特徴</h3>
+            <p>
+              丸顔でたれ目の優しい雰囲気があります。<br />
+              全体的に親しみやすい・かわいらしい・やわらかい印象です♪
+            </p>
+
+            <h3>髪色・有名人類似度など</h3>
+            <p>ピンク系が似合いそう♪ / 〇〇さんに似ています など</p>
           </div>
         </div>
 
@@ -129,6 +131,6 @@
       </section>
     </div>
 
-    <script src="{{ url_for('static', path='script.js') }}" defer></script>
+    <script src="script.js"></script>
   </body>
 </html>
