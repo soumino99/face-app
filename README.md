@@ -6,7 +6,7 @@
 
 - **フロントエンド**: `app/templates/index.html` + `app/static/{style.css,script.js,img/...}`。Vanilla JS で各画面を制御し、API とは Fetch API で通信。
 - **バックエンド**: FastAPI (`app/main.py`) が HTML/静的ファイル/REST API を統合提供。`uvicorn` で起動。
-- **データフロー**: 撮影画像 → `/api/face-analyze` で解析IDと指標を受け取り → 特徴点・撮影品質を表示 → `/api/diagnose` へ解析ID＋嗜好を送信 → 推奨タイプを返却。
+- **データフロー**: 撮影画像 → `/api/face-analyze` が MediaPipe Face Mesh でランドマーク/品質/輪郭タイプを算出 → 特徴点を表示・微調整 → `/api/diagnose` へ解析ID＋嗜好を送信 → 推奨タイプを返却。
 
 ## ディレクトリ構成
 
@@ -42,7 +42,7 @@ face-app/
 
 1. **カメラ起動**: `startCamera()` が `navigator.mediaDevices.getUserMedia()` で前面カメラを取得。ストリームは `cameraStream` にキャッシュ。
 2. **撮影と保存**: `capturePhoto()` で `<video>` を canvas に転写し、左右反転を補正した Base64 (`capturedImageData`) を保持。
-3. **特徴点リクエスト**: `sendImageToServerForFaceDetect()` が Base64 → Blob 変換後 `FormData` として `/api/face-analyze` へ送信。レスポンスから `analysisId` と `landmarks` を取得し、キャンバスへ描画。ユーザーはドラッグでランドマークを微調整し、ダブルクリックで追加できる。
+3. **特徴点リクエスト**: `sendImageToServerForFaceDetect()` が Base64 → Blob 変換後 `FormData` として `/api/face-analyze` へ送信。バックエンドは MediaPipe Face Mesh (FaceMesh, max_num_faces=1) で 8 点の主要ランドマーク（顎先/頬骨/目頭/鼻先/口角）を抽出し、レスポンスで `analysisId` と `landmarks` を返す。ユーザーは描画された点をドラッグで微調整できる。
 4. **診断リクエスト**: `sendLandmarksForDiagnosis()` が `analysisId` とユーザーが調整した `landmarks` を JSON で `/api/diagnose` に送信。結果は従来どおり結果画面で表示し、撮影画像を `result-canvas` に再描画。
 5. **UI 状態管理**: `.screen` 要素に `active` クラス付与で表示切替。`data-target` 属性を持つボタンで遷移し、ローディング時は `screen-loading` を共通表示。
 
@@ -55,7 +55,7 @@ face-app/
 
 | エンドポイント | メソッド | リクエスト | 成功レスポンス | エラー例 |
 |----------------|----------|------------|-----------------|----------|
-| `/api/face-analyze` | POST | `multipart/form-data` で `file` (画像: JPEG/PNG/WebP、上限 5MB) | `200 OK` `{ "analysisId", "landmarks", "quality", "faceShape", "symmetry", "recommendationPreview" }` | `400` 形式エラー、`413` サイズ超過 |
+| `/api/face-analyze` | POST | `multipart/form-data` で `file` (画像: JPEG/PNG/WebP、上限 5MB) | `200 OK` `{ "analysisId", "landmarks" (MediaPipe 8点), "quality", "faceShape", "symmetry", "recommendationPreview" }` | `400` 形式エラー、`413` サイズ超過 |
 | `/api/diagnose` | POST | `application/json` `{ "analysisId": string, "stylePreference"?: "natural"\|"cool"\|"cute", "focus"?: "balance"\|"eyes"\|"line", "landmarks"?: Landmark[] }` | `200 OK` `{ "result": { "type", "description", "palette", "celebrity", "careTips", "nextSteps" } }` | `404` 解析ID不明、`422` バリデーション | *UI では `stylePreference`/`focus` は送信していませんが API としては利用可能* |
 | `/api/health` | GET | なし | `200 OK` `{ "status": "ok", "timestamp": "..." }` | - |
 
@@ -126,8 +126,9 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ## 動作確認チェックリスト
 
 1. ボタン操作で G-1 → G-4 まで遷移し、撮影画像と結果が表示される。
-2. 開発者ツール Network タブで `/static/...`、`/api/face-analyze`、`/api/diagnose` が 200 を返している。
-3. API 単体テスト例:
+2. 特徴点画面で MediaPipe が自動打点したポイントをドラッグして微調整できる。
+3. 開発者ツール Network タブで `/static/...`、`/api/face-analyze`、`/api/diagnose` が 200 を返している。
+4. API 単体テスト例:
   ```powershell
   # 先に face-analyze を叩き、analysisId を取得してから使用
   curl -X POST http://127.0.0.1:8000/api/diagnose ^

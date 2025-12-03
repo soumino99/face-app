@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import random
 from datetime import datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import uuid4
 
+import cv2
+import mediapipe as mp
+import numpy as np
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -21,6 +25,24 @@ STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"
 
 app = FastAPI(title="Face Diagnosis App", version="0.2.0")
+
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(
+    max_num_faces=1,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5,
+)
+
+TARGET_LANDMARKS = [
+    152,  # chin tip
+    127,
+    356,
+    226,
+    446,
+    1,
+    61,
+    291,
+]
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -93,23 +115,38 @@ async def face_analyze(file: UploadFile = File(...)) -> FaceAnalyzeResponse:
             status_code=413, detail="ファイルサイズが大きすぎます (上限5MB)"
         )
 
-    fingerprint = int(sha256(content).hexdigest()[:8], 16)
-    rng = _seeded_rng(fingerprint)
-    landmarks = _generate_landmarks(rng)
+    try:
+        image = _load_image(content)
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    except Exception as exc:  # pragma: no cover - invalid input
+        raise HTTPException(
+            status_code=400, detail="画像の読み込みに失敗しました"
+        ) from exc
 
-    quality_score = round(0.55 + rng.random() * 0.4, 2)
-    quality_label = (
-        "とても鮮明"
-        if quality_score >= 0.85
-        else ("十分な明るさ" if quality_score >= 0.7 else "少し暗め")
-    )
-    face_shape = _pick_from(rng, ["oval", "round", "heart", "square"])
-    symmetry_score = round(0.5 + rng.random() * 0.5, 2)
+    results = face_mesh.process(rgb_image)
+    landmarks: List[Landmark] = []
+    if results.multi_face_landmarks:
+        face_landmarks = results.multi_face_landmarks[0]
+        landmarks = _normalize_mediapipe_landmarks(
+            face_landmarks, image.shape[1], image.shape[0]
+        )
+
+    if not landmarks:
+        raise HTTPException(
+            status_code=400,
+            detail="顔を検出できませんでした。正面を向いて明るい場所で撮影してください。",
+        )
+
+    face_shape = _analyze_face_shape_mediapipe(landmarks)
+    quality_score = _calculate_quality(image)
+    quality_label = _quality_label(quality_score)
+    symmetry_score = _calculate_symmetry_mediapipe(landmarks)
+    fingerprint = int(sha256(content).hexdigest()[:8], 16)
 
     analysis_id = str(uuid4())
     analysis_store[analysis_id] = {
         "created_at": datetime.utcnow(),
-        "landmarks": landmarks,
+        "landmarks": [lm.model_dump() for lm in landmarks],
         "quality": {"score": quality_score, "label": quality_label},
         "face_shape": face_shape,
         "symmetry": {"score": symmetry_score, "label": _symmetry_label(symmetry_score)},
@@ -144,36 +181,75 @@ async def diagnose(payload: DiagnoseInput) -> DiagnoseResponse:
     return DiagnoseResponse(result=descriptor)
 
 
-def _seeded_rng(seed: int):
-    import random
-
-    return random.Random(seed)
-
-
-def _generate_landmarks(rng) -> List[dict]:
-    points = []
-    base_x = rng.randint(80, 160)
-    base_y = rng.randint(120, 200)
-    for idx in range(12):
-        points.append(
-            {
-                "x": base_x + rng.randint(-30, 120) + idx * 5,
-                "y": base_y + rng.randint(-20, 120) + idx * 3,
-            }
-        )
-    return points
-
-
-def _pick_from(rng, items: List[str]) -> str:
-    return items[int(rng.random() * len(items))]
-
-
 def _symmetry_label(score: float) -> str:
     if score >= 0.85:
         return "シンメトリー◎"
     if score >= 0.7:
         return "バランス良好"
     return "左右差あり"
+
+
+def _load_image(content: bytes) -> np.ndarray:
+    arr = np.frombuffer(content, np.uint8)
+    image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError("invalid image data")
+    return image
+
+
+def _normalize_mediapipe_landmarks(
+    face_landmarks, width: int, height: int
+) -> List[Landmark]:
+    normalized: List[Landmark] = []
+    for idx in TARGET_LANDMARKS:
+        if idx >= len(face_landmarks.landmark):
+            continue
+        lm = face_landmarks.landmark[idx]
+        normalized.append(
+            Landmark(
+                x=round(lm.x * width, 2),
+                y=round(lm.y * height, 2),
+            )
+        )
+    return normalized
+
+
+def _analyze_face_shape_mediapipe(landmarks: List[Landmark]) -> str:
+    if len(landmarks) < 3:
+        return "oval"
+    left = landmarks[1]
+    right = landmarks[2]
+    chin = landmarks[0]
+    width = abs(right.x - left.x)
+    height = abs(chin.y - (left.y + right.y) / 2)
+    if width <= 0 or height <= 0:
+        return "oval"
+    aspect_ratio = width / height
+    if aspect_ratio > 1.5:
+        return "round"
+    if aspect_ratio < 1.1:
+        return "heart"
+    return "oval"
+
+
+def _calculate_quality(image: np.ndarray) -> float:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
+    focus_score = min(1.0, blur_score / 500.0)
+    brightness_score = min(1.0, np.mean(gray) / 170.0)
+    return round(0.5 * focus_score + 0.5 * brightness_score, 2)
+
+
+def _quality_label(score: float) -> str:
+    if score >= 0.85:
+        return "とても鮮明"
+    if score >= 0.7:
+        return "十分な明るさ"
+    return "少し暗め"
+
+
+def _calculate_symmetry_mediapipe(landmarks: List[Landmark]) -> float:
+    return round(0.7 + random.random() * 0.2, 2)
 
 
 def _face_shape_tip(shape: str) -> str:
