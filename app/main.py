@@ -60,6 +60,30 @@ FACE_SHAPE_LABELS = {
     "diamond": "ひし形",
 }
 
+
+# 形分類用のしきい値 (後から調整しやすいように集約)
+ASPECT_LONG_STRONG = 1.40  # 面長を強く判定する縦横比 (H / cheek_width)
+ASPECT_LONG_SOFT = 1.30  # 面長寄りの緩いしきい値
+
+HEART_FOREHEAD_MIN = 1.05  # 逆三角形: 額 / 頬 の最小比
+HEART_JAW_MAX = 0.85  # 逆三角形: 顎 / 頬 の最大比
+HEART_TEMPLE_MIN = 1.02  # 逆三角形: こめかみ / 頬 の最小比
+HEART_JAW_ANGLE_MAX = 150  # 逆三角形: 顎角の最大角度 (小さいほどシャープ)
+
+DIAMOND_PROMINENCE_MIN = 1.10  # ひし形: 頬骨突出度 (upper_cheek / jawline)
+DIAMOND_FOREHEAD_MAX = 1.02  # ひし形: 額 / 頬 の最大比
+DIAMOND_JAW_MAX = 0.95  # ひし形: 顎 / 頬 の最大比
+
+SQUARE_JAW_MIN = 1.00  # ベース型: 顎 / 頬 の最小比
+SQUARE_JAWLINE_MIN = 0.98  # ベース型: エラ / 頬 の最小比
+SQUARE_JAW_ANGLE_MIN = 150  # ベース型: 顎角の最小角度 (大きいほど角ばる)
+SQUARE_FOREHEAD_MAX = 1.05  # ベース型: 額 / 頬 の最大比 (広すぎると逆三角形寄り)
+
+ROUND_ASPECT_MAX = 1.15  # 丸顔: 縦横比の最大値
+ROUND_FOREHEAD_DELTA_MAX = 0.08  # 丸顔: 額/頬 比と 1.0 の許容差
+ROUND_JAW_MIN = 0.95  # 丸顔: 顎 / 頬 の最小比
+ROUND_JAW_ANGLE_MIN = 145  # 丸顔: 顎角の最小角度
+
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -245,7 +269,7 @@ def _angle(a: Landmark, b: Landmark, c: Landmark) -> float:
 
 
 def _analyze_face_shape_mediapipe(landmarks: List[Landmark]) -> str:
-    """Classify into six face shapes using expanded landmarks/ratios."""
+    """Classify into six face shapes using landmark ratios and angles."""
 
     lm = _landmark_map(landmarks)
     required = {
@@ -280,7 +304,8 @@ def _analyze_face_shape_mediapipe(landmarks: List[Landmark]) -> str:
     if face_height <= 0 or cheek_width <= 0:
         return "oval"
 
-    cheek_vs_height = cheek_width / face_height
+    # 基本となる比率・角度
+    aspect = face_height / cheek_width
     forehead_vs_cheek = forehead_width / cheek_width
     temple_vs_cheek = temple_width / cheek_width
     jaw_vs_cheek = jaw_width / cheek_width
@@ -288,20 +313,46 @@ def _analyze_face_shape_mediapipe(landmarks: List[Landmark]) -> str:
     cheek_prominence = upper_cheek_width / jawline_width if jawline_width else 1.0
     jaw_angle = _angle(lm["jaw_corner_left"], chin, lm["jaw_corner_right"])
 
-    if cheek_vs_height <= 0.68:
+    # 1. 面長: 明確に縦長のものを最優先で判定
+    if aspect >= ASPECT_LONG_STRONG:
         return "long"
-    if forehead_vs_cheek >= 1.08 and jaw_vs_cheek <= 0.82 and temple_vs_cheek >= 1.05:
-        return "heart"
-    if temple_vs_cheek <= 0.92 and cheek_prominence >= 1.08 and jaw_vs_cheek <= 0.9:
-        return "diamond"
-    if jaw_vs_cheek >= 1.02 and jaw_angle >= 150 and jawline_vs_cheek >= 0.95:
-        return "square"
+
+    # 2. 逆三角形: 額が広く顎が細い + 上部の横幅が広め + 顎角がシャープ
     if (
-        cheek_vs_height >= 0.9
-        and abs(forehead_vs_cheek - 1.0) <= 0.1
-        and jaw_vs_cheek >= 0.95
+        forehead_vs_cheek >= HEART_FOREHEAD_MIN
+        and jaw_vs_cheek <= HEART_JAW_MAX
+        and temple_vs_cheek >= HEART_TEMPLE_MIN
+        and jaw_angle <= HEART_JAW_ANGLE_MAX
+    ):
+        return "heart"
+
+    # 3. ひし形: 頬骨が額・顎より明らかに広く突出
+    if (
+        cheek_prominence >= DIAMOND_PROMINENCE_MIN
+        and forehead_vs_cheek <= DIAMOND_FOREHEAD_MAX
+        and jaw_vs_cheek <= DIAMOND_JAW_MAX
+    ):
+        return "diamond"
+
+    # 4. ベース型: 顎幅・エラ幅が広く、角ばった輪郭
+    if (
+        jaw_vs_cheek >= SQUARE_JAW_MIN
+        and jawline_vs_cheek >= SQUARE_JAWLINE_MIN
+        and jaw_angle >= SQUARE_JAW_ANGLE_MIN
+        and forehead_vs_cheek <= SQUARE_FOREHEAD_MAX
+    ):
+        return "square"
+
+    # 5. 丸顔: 縦横比が低く、額と頬の幅が近く、顎もふっくら
+    if (
+        aspect <= ROUND_ASPECT_MAX
+        and abs(forehead_vs_cheek - 1.0) <= ROUND_FOREHEAD_DELTA_MAX
+        and jaw_vs_cheek >= ROUND_JAW_MIN
+        and jaw_angle >= ROUND_JAW_ANGLE_MIN
     ):
         return "round"
+
+    # 6. どれにも強く当てはまらないものは卵型として扱う
     return "oval"
 
 
