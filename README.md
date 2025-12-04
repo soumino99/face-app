@@ -24,7 +24,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
   - ライブラリ選択（`<input type="file">`）からの Base64 変換。
   - 解析済みランドマークの描画・ドラッグ編集 (`<canvas id="feature-canvas">`)。
   - `/api/face-analyze` / `/api/diagnose` との通信。
-- `app/static/style.css` … PC/モバイル両対応のシンプルなデザイン。アップロードアイコンはインライン SVG で表示。
+- `app/static/style.css` … PC/モバイル両対応のシンプルなデザイン。アップロードボタンは `library-icon.png` を用いたリファレンス準拠のデザイン。
 
 ### 画面フロー
 
@@ -87,7 +87,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 - `Makefile` を用意済み: `make venv`, `make install`, `make run`, `make clean`。
 - uv/pip どちらでも依存解決可能だが、既定では `.venv` を前提に uv を推奨。
-- テンプレートにインライン SVG（カメラ/ライブラリアイコン）を埋め込み済み。差し替える場合は `app/templates/index.html` を直接編集。
+- カメラアイコンはインライン SVG、ライブラリアイコンは `library-icon.png` を参照（いずれも `app/templates/index.html` から変更可能）。
 - iOS/Android でカメラを使用する場合は必ず HTTPS でデプロイすること。
 
 ## 動作確認チェックリスト
