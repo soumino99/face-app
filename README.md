@@ -4,6 +4,8 @@
 
 ## クイックスタート
 
+### 1. uv / make でローカル実行
+
 ```powershell
 git clone <repo>
 cd face-app
@@ -11,10 +13,38 @@ uv venv .venv
 .\.venv\Scripts\activate
 uv pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-# または make run   (make install / make clean も利用可能)
 ```
 
+`make install` → `make run` でも同じ流れで起動できます。`make clean` で仮想環境を削除します。
+
 ブラウザで `http://127.0.0.1:8000/` を開き、カメラ権限を許可するか、ライブラリアイコンを押して任意の画像を選択してください。HTTPS もしくは `localhost` であれば iOS/Android Safari/Chrome でも動作します。
+
+### 2. Docker でローカル実行
+
+```powershell
+docker build -t face-app .
+docker run --rm -p 8000:8000 face-app
+```
+
+別ポートで公開したい場合は `-p <host_port>:8000` を変更してください。Make には `docker-build` / `docker-run` / `docker-stop` ターゲットも用意しています。
+
+```powershell
+make docker-build
+make docker-run DOCKER_HOST_PORT=8080  # 例: ホスト側を 8080 にする
+# 終了時
+make docker-stop
+```
+
+## Render へのデプロイ
+
+Render では Docker サービスを選択すると、`Dockerfile` に記述した Python 3.10 + 依存パッケージ構成でデプロイできます。
+
+1. このリポジトリを GitHub/GitLab にプッシュ。
+2. Render ダッシュボード → **New +** → **Web Service** → 対象リポジトリを選択。
+3. **Environment** を `Docker` に設定し、**Root Directory** は `.` のまま。Build Command/Start Command は空で OK（`Dockerfile` の CMD が使われます）。
+4. 必要に応じて `PORT=8000` など追加環境変数を設定し、デプロイ開始。
+
+公開後は Render 側で HTTPS が有効になるため、スマホブラウザからでもカメラ権限が許可されます。
 
 ## フロントエンド概要
 
