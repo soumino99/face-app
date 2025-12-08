@@ -13,6 +13,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+COPY app/static/img/ app/static/img/
 
 EXPOSE 8000
 
