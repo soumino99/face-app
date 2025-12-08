@@ -61,28 +61,114 @@ FACE_SHAPE_LABELS = {
 }
 
 
-# 形分類用のしきい値 (後から調整しやすいように集約)
-ASPECT_LONG_STRONG = 1.40  # 面長を強く判定する縦横比 (H / cheek_width)
-ASPECT_LONG_SOFT = 1.30  # 面長寄りの緩いしきい値
+# exp/feature_report.md から抽出したデータドリブンなプロトタイプ
+FEATURE_METRICS = (
+    "aspect_ratio",
+    "width_top",
+    "width_mid",
+    "width_bottom",
+    "jaw_taper",
+    "cheek_fullness",
+)
 
-HEART_FOREHEAD_MIN = 1.05  # 逆三角形: 額 / 頬 の最小比
-HEART_JAW_MAX = 0.85  # 逆三角形: 顎 / 頬 の最大比
-HEART_TEMPLE_MIN = 1.02  # 逆三角形: こめかみ / 頬 の最小比
-HEART_JAW_ANGLE_MAX = 150  # 逆三角形: 顎角の最大角度 (小さいほどシャープ)
+BAND_LEVELS = {
+    "width_top": 0.20,
+    "width_mid": 0.50,
+    "width_bottom": 0.85,
+}
 
-DIAMOND_PROMINENCE_MIN = 1.10  # ひし形: 頬骨突出度 (upper_cheek / jawline)
-DIAMOND_FOREHEAD_MAX = 1.02  # ひし形: 額 / 頬 の最大比
-DIAMOND_JAW_MAX = 0.95  # ひし形: 顎 / 頬 の最大比
-
-SQUARE_JAW_MIN = 1.00  # ベース型: 顎 / 頬 の最小比
-SQUARE_JAWLINE_MIN = 0.98  # ベース型: エラ / 頬 の最小比
-SQUARE_JAW_ANGLE_MIN = 150  # ベース型: 顎角の最小角度 (大きいほど角ばる)
-SQUARE_FOREHEAD_MAX = 1.05  # ベース型: 額 / 頬 の最大比 (広すぎると逆三角形寄り)
-
-ROUND_ASPECT_MAX = 1.15  # 丸顔: 縦横比の最大値
-ROUND_FOREHEAD_DELTA_MAX = 0.08  # 丸顔: 額/頬 比と 1.0 の許容差
-ROUND_JAW_MIN = 0.95  # 丸顔: 顎 / 頬 の最小比
-ROUND_JAW_ANGLE_MIN = 145  # 丸顔: 顎角の最小角度
+PROTOTYPE_STATS = {
+    "heart": {
+        "mean": {
+            "aspect_ratio": 1.010,
+            "width_top": 0.926,
+            "width_mid": 0.970,
+            "width_bottom": 0.677,
+            "jaw_taper": 0.698,
+            "cheek_fullness": 1.048,
+        },
+        "std": {
+            "aspect_ratio": 0.167,
+            "width_top": 0.012,
+            "width_mid": 0.010,
+            "width_bottom": 0.018,
+            "jaw_taper": 0.018,
+            "cheek_fullness": 0.023,
+        },
+    },
+    "long": {
+        "mean": {
+            "aspect_ratio": 1.105,
+            "width_top": 0.909,
+            "width_mid": 0.971,
+            "width_bottom": 0.713,
+            "jaw_taper": 0.734,
+            "cheek_fullness": 1.071,
+        },
+        "std": {
+            "aspect_ratio": 0.347,
+            "width_top": 0.028,
+            "width_mid": 0.028,
+            "width_bottom": 0.046,
+            "jaw_taper": 0.052,
+            "cheek_fullness": 0.054,
+        },
+    },
+    "oval": {
+        "mean": {
+            "aspect_ratio": 1.323,
+            "width_top": 0.941,
+            "width_mid": 0.954,
+            "width_bottom": 0.670,
+            "jaw_taper": 0.702,
+            "cheek_fullness": 1.018,
+        },
+        "std": {
+            "aspect_ratio": 0.395,
+            "width_top": 0.055,
+            "width_mid": 0.023,
+            "width_bottom": 0.029,
+            "jaw_taper": 0.028,
+            "cheek_fullness": 0.071,
+        },
+    },
+    "round": {
+        "mean": {
+            "aspect_ratio": 1.186,
+            "width_top": 0.929,
+            "width_mid": 0.987,
+            "width_bottom": 0.682,
+            "jaw_taper": 0.691,
+            "cheek_fullness": 1.063,
+        },
+        "std": {
+            "aspect_ratio": 0.386,
+            "width_top": 0.026,
+            "width_mid": 0.007,
+            "width_bottom": 0.030,
+            "jaw_taper": 0.028,
+            "cheek_fullness": 0.036,
+        },
+    },
+    "square": {
+        "mean": {
+            "aspect_ratio": 0.923,
+            "width_top": 0.924,
+            "width_mid": 0.948,
+            "width_bottom": 0.702,
+            "jaw_taper": 0.746,
+            "cheek_fullness": 1.027,
+        },
+        "std": {
+            "aspect_ratio": 0.152,
+            "width_top": 0.025,
+            "width_mid": 0.056,
+            "width_bottom": 0.044,
+            "jaw_taper": 0.094,
+            "cheek_fullness": 0.070,
+        },
+    },
+}
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -158,11 +244,13 @@ async def face_analyze(file: UploadFile = File(...)) -> FaceAnalyzeResponse:
 
     results = face_mesh.process(rgb_image)
     landmarks: List[Landmark] = []
+    feature_vector: Optional[Dict[str, float]] = None
     if results.multi_face_landmarks:
         face_landmarks = results.multi_face_landmarks[0]
         landmarks = _normalize_mediapipe_landmarks(
             face_landmarks, image.shape[1], image.shape[0]
         )
+        feature_vector = _extract_face_shape_features(face_landmarks)
 
     if not landmarks:
         raise HTTPException(
@@ -170,7 +258,7 @@ async def face_analyze(file: UploadFile = File(...)) -> FaceAnalyzeResponse:
             detail="顔を検出できませんでした。正面を向いて明るい場所で撮影してください。",
         )
 
-    face_shape = _analyze_face_shape_mediapipe(landmarks)
+    face_shape = _classify_face_shape(feature_vector, landmarks)
     quality_score = _calculate_quality(image)
     quality_label = _quality_label(quality_score)
     symmetry_score = _calculate_symmetry_mediapipe(landmarks)
@@ -183,6 +271,7 @@ async def face_analyze(file: UploadFile = File(...)) -> FaceAnalyzeResponse:
         "quality": {"score": quality_score, "label": quality_label},
         "face_shape": face_shape,
         "symmetry": {"score": symmetry_score, "label": _symmetry_label(symmetry_score)},
+        "features": feature_vector or {},
         "fingerprint": fingerprint,
     }
     _purge_expired()
@@ -251,6 +340,73 @@ def _landmark_map(landmarks: List[Landmark]) -> Dict[str, Landmark]:
     return {name: landmarks[idx] for idx, (name, _) in enumerate(TARGET_LANDMARKS)}
 
 
+def _extract_face_shape_features(face_landmarks) -> Optional[Dict[str, float]]:
+    coords = np.array(
+        [(lm.x, lm.y) for lm in face_landmarks.landmark], dtype=np.float32
+    )
+    if coords.size == 0:
+        return None
+    coords = np.clip(coords, 0.0, 1.0)
+
+    xs = coords[:, 0]
+    ys = coords[:, 1]
+    x_min, x_max = float(xs.min()), float(xs.max())
+    y_min, y_max = float(ys.min()), float(ys.max())
+    width = max(x_max - x_min, 1e-4)
+    height = max(y_max - y_min, 1e-4)
+
+    rel_coords = np.column_stack(((xs - x_min) / width, (ys - y_min) / height))
+    widths = {key: _band_width(rel_coords, level) for key, level in BAND_LEVELS.items()}
+
+    aspect_ratio = height / width
+    jaw_taper = widths["width_bottom"] / max(widths["width_mid"], 1e-4)
+    cheek_fullness = widths["width_mid"] / max(widths["width_top"], 1e-4)
+
+    return {
+        "aspect_ratio": float(aspect_ratio),
+        **{key: float(value) for key, value in widths.items()},
+        "jaw_taper": float(jaw_taper),
+        "cheek_fullness": float(cheek_fullness),
+    }
+
+
+def _band_width(rel_coords: np.ndarray, rel_level: float) -> float:
+    target = rel_level
+    tol = 0.035
+    xs = rel_coords[:, 0]
+    ys = rel_coords[:, 1]
+    for _ in range(5):
+        mask = np.abs(ys - target) <= tol
+        if mask.sum() >= 2:
+            slice_x = xs[mask]
+            return float(slice_x.max() - slice_x.min())
+        tol *= 1.5
+    return float(xs.max() - xs.min())
+
+
+def _classify_face_shape(
+    feature_vector: Optional[Dict[str, float]], landmarks: List[Landmark]
+) -> str:
+    if feature_vector:
+        return _classify_face_shape_with_features(feature_vector)
+    return _legacy_face_shape_classification(landmarks)
+
+
+def _classify_face_shape_with_features(features: Dict[str, float]) -> str:
+    best_label = "oval"
+    best_score = float("inf")
+    for label, stats in PROTOTYPE_STATS.items():
+        score = 0.0
+        for metric in FEATURE_METRICS:
+            std = max(stats["std"].get(metric, 1.0), 1e-3)
+            delta = (features.get(metric, 0.0) - stats["mean"][metric]) / std
+            score += delta * delta
+        if score < best_score:
+            best_score = score
+            best_label = label
+    return best_label
+
+
 def _distance(p1: Landmark, p2: Landmark) -> float:
     return math.hypot(p1.x - p2.x, p1.y - p2.y)
 
@@ -268,8 +424,8 @@ def _angle(a: Landmark, b: Landmark, c: Landmark) -> float:
     return math.degrees(math.acos(cos_angle))
 
 
-def _analyze_face_shape_mediapipe(landmarks: List[Landmark]) -> str:
-    """Classify into six face shapes using landmark ratios and angles."""
+def _legacy_face_shape_classification(landmarks: List[Landmark]) -> str:
+    """Fallback classifier based on a small subset of landmarks."""
 
     lm = _landmark_map(landmarks)
     required = {
