@@ -48,3 +48,5 @@ media/
 tmp/
 *.local.json
 node_modules/
+
+exp/
